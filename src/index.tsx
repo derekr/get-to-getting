@@ -15,6 +15,29 @@ import type { PropsWithChildren } from "hono/jsx";
 import { Database } from "bun:sqlite";
 
 type Size = "small" | "medium" | "large";
+
+function parseFilterInput(input: {
+  size?: string | null;
+  query?: string | null;
+}) {
+  let size: Size = "small";
+
+  if (input.size) {
+    const isValid =
+      input.size === "small" ||
+      input.size === "medium" ||
+      input.size === "large";
+    if (isValid) {
+      size = input.size as Size;
+    }
+  }
+
+  const queryParam = input.query ?? null;
+  const query = queryParam ? `%${queryParam}%` : null;
+
+  return { size, query };
+}
+
 class Product {
   id: number;
   title: string;
@@ -103,6 +126,38 @@ function Root(props: PropsWithChildren<{ includeDatastar?: boolean }>) {
   );
 }
 
+function FilterForm(props: { size: Size; query: string }) {
+  return (
+    <form>
+      <label>
+        Size:
+        <select name="size">
+          <option value="">All</option>
+          <option value="small" selected={props.size === "small"}>
+            Small
+          </option>
+          <option value="medium" selected={props.size === "medium"}>
+            Medium
+          </option>
+          <option value="large" selected={props.size === "large"}>
+            Large
+          </option>
+        </select>
+      </label>
+      <label>
+        Search:
+        <input
+          type="text"
+          name="query"
+          value={props.size}
+          placeholder="Search..."
+        />
+      </label>
+      <button type="submit">Search</button>
+    </form>
+  );
+}
+
 function Products(props: { products: Product[] }) {
   return (
     <div>
@@ -157,41 +212,16 @@ app.get("/", (c) => {
  * 5. Go back to 1.
  */
 app.get("/search-plain", (c) => {
-  let queryParam = c.req.query("query") ?? null;
-  let query = queryParam ? `%${queryParam}%` : null;
-  let size = c.req.query("size") ?? "small";
+  const { size, query } = parseFilterInput({
+    size: c.req.query("size"),
+    query: c.req.query("query"),
+  });
 
   let filteredProducts = filter.all(query, query, size);
 
   return c.html(
     <Root>
-      <form>
-        <label>
-          Size:
-          <select name="size">
-            <option value="">All</option>
-            <option value="small" selected={size === "small"}>
-              Small
-            </option>
-            <option value="medium" selected={size === "medium"}>
-              Medium
-            </option>
-            <option value="large" selected={size === "large"}>
-              Large
-            </option>
-          </select>
-        </label>
-        <label>
-          Search:
-          <input
-            type="text"
-            name="query"
-            value={queryParam ?? ""}
-            placeholder="Search..."
-          />
-        </label>
-        <button type="submit">Search</button>
-      </form>
+      <FilterForm size={size} query={c.req.query("query") ?? ""} />
       <Products products={filteredProducts} />
     </Root>,
   );
@@ -211,7 +241,18 @@ app.get("/search-plain", (c) => {
  * whatever the server provides.
  */
 app.get("/search-update-url-client-side", (c) => {
-  return c.text("Search update url client-side!");
+  const { size, query } = parseFilterInput({
+    size: c.req.query("size"),
+    query: c.req.query("query"),
+  });
+
+  let filteredProducts = filter.all(query, query, size);
+
+  return c.html(
+    <Root>
+      <FilterForm size={size} query={c.req.query("query") ?? ""} />
+    </Root>,
+  );
 });
 
 /**
