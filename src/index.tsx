@@ -10,14 +10,54 @@
  * avoid accidentally building a Single Page Application.
  */
 import { Hono } from "hono";
+import type { PropsWithChildren } from "hono/jsx";
 
 const app = new Hono();
+
+function Root(props: PropsWithChildren<{ includeDatastar?: boolean }>) {
+  return (
+    <html lang="en">
+      <head>
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+        <title>Query Params Example</title>
+        {props.includeDatastar ? (
+          <script
+            type="module"
+            src="https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.0-RC.6/bundles/datastar.js"
+          />
+        ) : null}
+      </head>
+      <body>{props.children}</body>
+    </html>
+  );
+}
 
 /**
  * Index of all the example routes.
  */
 app.get("/", (c) => {
-  return c.text("Hello Hono!");
+  return c.html(
+    <Root>
+      <ul>
+        <li>
+          <a href="/search-plain">Search Plain</a>
+        </li>
+        <li>
+          <a href="/search-update-url-client-side">
+            Search Update URL Client-Side
+          </a>
+        </li>
+        <li>
+          <a href="/search-server-patch">Search Server Patch</a>
+        </li>
+        <li>
+          <a href="/search/sessions">Search Sessions</a>
+        </li>
+      </ul>
+    </Root>,
+  );
 });
 
 /**
@@ -60,8 +100,8 @@ app.get("/search-update-url-client-side", (c) => {
  * This approach will take query params in as initial filter state that powers the rendering of
  * the form. Updating the form will send a get action and patch in the new UI based on form state
  * as well as a script for updating the URL with a value provided from the server.
- * 
- * The server can also render things like links w/ query params so a user can right click that 
+ *
+ * The server can also render things like links w/ query params so a user can right click that
  * to copy and share or bookmark. Maintaining the server as the source of truth for valid URLs.
  */
 app.get("/search-server-patch", (c) => {
@@ -72,15 +112,15 @@ app.get("/search-server-patch", (c) => {
  * You're really in to the idea of server authority and don't want to futz with updating
  * the the URL or thinking about browser history?
  * You're fine with moving more state to the backend?
- * 
- * Instead of leveraging query params you can think of your resource as a search session. 
- * By tokenizing the session you can maintain all filter state and pretty much anything you 
+ *
+ * Instead of leveraging query params you can think of your resource as a search session.
+ * By tokenizing the session you can maintain all filter state and pretty much anything you
  * want and associate with a given session.
- * 
- * Users can revisit past searches. Share them. Bookmark them. You can even start to do 
- * more advanced things like maintaining a db per page/session (materialized view of source data) 
+ *
+ * Users can revisit past searches. Share them. Bookmark them. You can even start to do
+ * more advanced things like maintaining a db per page/session (materialized view of source data)
  * to make for really performant search operations. Lots of upsides to consider.
- * 
+ *
  * You can even still use query params to jump start a search session and share those in some cases.
  */
 app.get("/search/sessions", (c) => {
