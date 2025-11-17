@@ -12,6 +12,75 @@
 import { Hono } from "hono";
 import type { PropsWithChildren } from "hono/jsx";
 
+import { Database } from "bun:sqlite";
+
+type Size = "small" | "medium" | "large";
+class Product {
+  id: number;
+  title: string;
+  size: string;
+
+  constructor(id: number, title: string, size: string) {
+    this.id = id;
+    this.title = title;
+    this.size = size;
+  }
+}
+
+// Setup sample database
+const db = new Database(":memory:");
+
+// Create products table
+db.run(`
+  CREATE TABLE products (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    size TEXT NOT NULL
+  )
+`);
+
+// Inject 100 records with random size and title fields
+const sizes: Size[] = ["small", "medium", "large"];
+const adjectives = [
+  "Amazing",
+  "Fantastic",
+  "Great",
+  "Super",
+  "Awesome",
+  "Cool",
+  "Nice",
+  "Premium",
+  "Deluxe",
+  "Ultimate",
+];
+const nouns = [
+  "Widget",
+  "Gadget",
+  "Tool",
+  "Device",
+  "Item",
+  "Product",
+  "Thing",
+  "Gizmo",
+  "Contraption",
+  "Apparatus",
+];
+
+const insert = db.prepare("INSERT INTO products (title, size) VALUES (?, ?)");
+const filter = db
+  .query(
+    "SELECT * FROM products WHERE (? IS NULL OR LOWER(title) LIKE LOWER(?)) AND size = ?",
+  )
+  .as(Product);
+
+for (let i = 0; i < 100; i++) {
+  const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+  const noun = nouns[Math.floor(Math.random() * nouns.length)];
+  const title = `${adjective} ${noun} ${i + 1}`;
+  const size = sizes[Math.floor(Math.random() * sizes.length)]!;
+  insert.run(title, size);
+}
+
 const app = new Hono();
 
 function Root(props: PropsWithChildren<{ includeDatastar?: boolean }>) {
@@ -31,6 +100,23 @@ function Root(props: PropsWithChildren<{ includeDatastar?: boolean }>) {
       </head>
       <body>{props.children}</body>
     </html>
+  );
+}
+
+function Products(props: { products: Product[] }) {
+  return (
+    <div>
+      <h1>Products</h1>
+      <ul>
+        {props.products.map((product) => (
+          <li key={product.id}>
+            <a href={`/product/${product.id}`}>
+              {product.title} | {product.size}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -71,7 +157,44 @@ app.get("/", (c) => {
  * 5. Go back to 1.
  */
 app.get("/search-plain", (c) => {
-  return c.text("Search plain!");
+  let queryParam = c.req.query("query") ?? null;
+  let query = queryParam ? `%${queryParam}%` : null;
+  let size = c.req.query("size") ?? "small";
+
+  let filteredProducts = filter.all(query, query, size);
+
+  return c.html(
+    <Root>
+      <form>
+        <label>
+          Size:
+          <select name="size">
+            <option value="">All</option>
+            <option value="small" selected={size === "small"}>
+              Small
+            </option>
+            <option value="medium" selected={size === "medium"}>
+              Medium
+            </option>
+            <option value="large" selected={size === "large"}>
+              Large
+            </option>
+          </select>
+        </label>
+        <label>
+          Search:
+          <input
+            type="text"
+            name="query"
+            value={queryParam ?? ""}
+            placeholder="Search..."
+          />
+        </label>
+        <button type="submit">Search</button>
+      </form>
+      <Products products={filteredProducts} />
+    </Root>,
+  );
 });
 
 /**
