@@ -126,12 +126,25 @@ function Root(props: PropsWithChildren<{ includeDatastar?: boolean }>) {
   );
 }
 
-function FilterForm(props: { size: Size; query: string }) {
+function FilterForm(props: {
+  size: Size;
+  query: string;
+  useDatastar?: boolean;
+}) {
+  const datastarAttrs = props.useDatastar
+    ? {
+        "data-signals:size": `'${props.size}'`,
+        "data-signals:query": `'${props.query}'`,
+        "data-on:input": `@get('/search-update-url-client-side?size='+$size+'&query='+$query)`,
+        "data-effect": `window.history.replaceState({}, '', new URL(window.location.pathname+'?size='+$size+'&query='+$query, window.location.href).toString())`,
+      }
+    : {};
+
   return (
-    <form>
+    <form {...datastarAttrs}>
       <label>
         Size:
-        <select name="size">
+        <select name="size" data-bind={props.useDatastar ? "size" : undefined}>
           <option value="">All</option>
           <option value="small" selected={props.size === "small"}>
             Small
@@ -149,8 +162,9 @@ function FilterForm(props: { size: Size; query: string }) {
         <input
           type="text"
           name="query"
-          value={props.size}
+          value={props.query}
           placeholder="Search..."
+          data-bind={props.useDatastar ? "query" : undefined}
         />
       </label>
       <button type="submit">Search</button>
@@ -248,9 +262,33 @@ app.get("/search-update-url-client-side", (c) => {
 
   let filteredProducts = filter.all(query, query, size);
 
+  // Check if this is a Datastar fragment request
+  const isFragment = c.req.header("datastar-request") === "true";
+
+  if (isFragment) {
+    // Return just the body content for fragment updates with merge-mode outer
+    c.header("datastar-merge-mode", "morph_element");
+    return c.html(
+      <body>
+        <FilterForm
+          size={size}
+          query={c.req.query("query") ?? ""}
+          useDatastar={true}
+        />
+        <Products products={filteredProducts} />
+      </body>,
+    );
+  }
+
+  // Full page render
   return c.html(
-    <Root>
-      <FilterForm size={size} query={c.req.query("query") ?? ""} />
+    <Root includeDatastar={true}>
+      <FilterForm
+        size={size}
+        query={c.req.query("query") ?? ""}
+        useDatastar={true}
+      />
+      <Products products={filteredProducts} />
     </Root>,
   );
 });
