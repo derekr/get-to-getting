@@ -32,10 +32,10 @@ function parseFilterInput(input: {
     }
   }
 
-  const queryParam = input.query ?? null;
-  const query = queryParam ? `%${queryParam}%` : null;
+  const query = input.query ?? null;
+  const queryPattern = query ? `%${query}%` : null;
 
-  return { size, query };
+  return { size, query, queryPattern };
 }
 
 class Product {
@@ -124,31 +124,12 @@ function Root(props: PropsWithChildren) {
   );
 }
 
-function FilterForm(props: {
-  size: Size;
-  query: string;
-  useDatastar?: boolean;
-}) {
-  const formAttrs = props.useDatastar
-    ? {
-        "data-signals:size": `'${props.size}'`,
-        "data-signals:query": `'${props.query}'`,
-        "data-on:input": `@get('/search-update-url-client-side?size='+$size+'&query='+$query)`,
-        "data-effect": `window.history.replaceState({}, '', new URL(window.location.pathname+'?size='+$size+'&query='+$query, window.location.href).toString())`,
-      }
-    : {};
-
+function FilterFields(props: { size: Size; query: string }) {
   return (
-    <form {...formAttrs}>
+    <>
       <label>
         Size:
-        <select
-          name="size"
-          data-bind={props.useDatastar ? "size" : undefined}
-          data-on:input={
-            !props.useDatastar ? "evt.target.form.requestSubmit()" : undefined
-          }
-        >
+        <select name="size" data-bind="size">
           <option value="">All</option>
           <option value="small" selected={props.size === "small"}>
             Small
@@ -168,11 +149,11 @@ function FilterForm(props: {
           name="query"
           value={props.query}
           placeholder="Search..."
-          data-bind={props.useDatastar ? "query" : undefined}
+          data-bind="query"
         />
       </label>
       <button type="submit">Search</button>
-    </form>
+    </>
   );
 }
 
@@ -201,7 +182,7 @@ app.get("/", (c) => {
     <Root>
       <ul>
         <li>
-          <a href="/search-plain">Search Plain</a>
+          <a href="/search-mpa">Search Plain</a>
         </li>
         <li>
           <a href="/search-update-url-client-side">
@@ -229,17 +210,19 @@ app.get("/", (c) => {
  * 4. Form submits to the same resource w/ method="get"
  * 5. Go back to 1.
  */
-app.get("/search-plain", (c) => {
-  const { size, query } = parseFilterInput({
+app.get("/search-mpa", (c) => {
+  const { size, query, queryPattern } = parseFilterInput({
     size: c.req.query("size"),
     query: c.req.query("query"),
   });
 
-  let filteredProducts = filter.all(query, query, size);
+  let filteredProducts = filter.all(queryPattern, queryPattern, size);
 
   return c.html(
     <Root>
-      <FilterForm size={size} query={c.req.query("query") ?? ""} />
+      <form data-on:input="evt.target.type === 'select' ? evt.target.form.requestSubmit() : null">
+        <FilterFields size={size} query={c.req.query("query") ?? ""} />
+      </form>
       <Products products={filteredProducts} />
     </Root>,
   );
@@ -259,39 +242,38 @@ app.get("/search-plain", (c) => {
  * whatever the server provides.
  */
 app.get("/search-update-url-client-side", (c) => {
-  const { size, query } = parseFilterInput({
+  const { size, query, queryPattern } = parseFilterInput({
     size: c.req.query("size"),
     query: c.req.query("query"),
   });
 
-  let filteredProducts = filter.all(query, query, size);
+  let filteredProducts = filter.all(queryPattern, queryPattern, size);
 
-  // Check if this is a Datastar fragment request
+  let formEl = (
+    <form
+      data-signals:size={`'${size}'`}
+      data-signals:query={`'${query ?? ""}'`}
+      data-on:input={`evt.target.form.requestSubmit()`}
+      data-on:submit={`evt.preventDefault && @get('/search-update-url-client-side?size='+$size+'&query='+$query) && window.history.replaceState({}, '', new URL(window.location.pathname+'?size='+$size+'&query='+$query, window.location.href).toString())`}
+    >
+      <FilterFields size={size} query={query ?? ""} />
+    </form>
+  );
   const isFragment = c.req.header("datastar-request") === "true";
 
   if (isFragment) {
-    // Return just the body content for fragment updates with merge-mode outer
     c.header("datastar-merge-mode", "morph_element");
     return c.html(
       <body>
-        <FilterForm
-          size={size}
-          query={c.req.query("query") ?? ""}
-          useDatastar={true}
-        />
+        {formEl}
         <Products products={filteredProducts} />
       </body>,
     );
   }
 
-  // Full page render
   return c.html(
     <Root>
-      <FilterForm
-        size={size}
-        query={c.req.query("query") ?? ""}
-        useDatastar={true}
-      />
+      {formEl}
       <Products products={filteredProducts} />
     </Root>,
   );
