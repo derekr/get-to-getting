@@ -14,6 +14,9 @@ import type { PropsWithChildren } from "hono/jsx";
 
 import { Database } from "bun:sqlite";
 
+/**
+ * Database and shared setup.
+ */
 type Size = "small" | "medium" | "large";
 
 function parseFilterInput(input: {
@@ -33,9 +36,8 @@ function parseFilterInput(input: {
   }
 
   const query = input.query ?? null;
-  const queryPattern = query ? `%${query}%` : null;
 
-  return { size, query, queryPattern };
+  return { size, query };
 }
 
 class Product {
@@ -95,6 +97,11 @@ const filter = db
     "SELECT * FROM products WHERE (? IS NULL OR LOWER(title) LIKE LOWER(?)) AND size = ?",
   )
   .as(Product);
+function getAllFilteredProducts(query: string | null, size: Size): Product[] {
+  const formattedQuery = query ? `%${query}%` : null;
+
+  return filter.all(formattedQuery, formattedQuery, size);
+}
 
 for (let i = 0; i < 100; i++) {
   const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
@@ -202,21 +209,25 @@ app.get("/", (c) => {
 
 /**
  * How to implement filtering using Multi Page Application routing. This example still
- * leverages Datastar simply to wire up an event to submit the form on select change.
+ * leverages Datastar simply to wire up an event to submit the form on select change to
+ * illustrate improved DX even with MPA approach.
  *
  * 1. Initially server renders from with filters populating any fields based on present query params.
  * 2. User interacts with form.
  * 3. Use JS to handle input change (or not).
  * 4. Form submits to the same resource w/ method="get"
  * 5. Go back to 1.
+ *
+ * Remember that query params likely modify the resource being requested so a full page load
+ * or navigation is correct and the most simple to reason about.
  */
 app.get("/search-mpa", (c) => {
-  const { size, query, queryPattern } = parseFilterInput({
+  const { size, query } = parseFilterInput({
     size: c.req.query("size"),
     query: c.req.query("query"),
   });
 
-  let filteredProducts = filter.all(queryPattern, queryPattern, size);
+  let filteredProducts = getAllFilteredProducts(query, size);
 
   return c.html(
     <Root>
@@ -235,26 +246,29 @@ app.get("/search-mpa", (c) => {
  * You're not alone. The instinct is to sync input values or client state to query params while getting
  * updated projection (html/json) from server based on the same input values or client state.
  *
- * ⚠️ You have state divergence now and filtering logic as leaked in to your front end code. You just created a SPA.
+ * ⚠️ You have state divergence now and filtering logic is leaked in to your front end code. You just accidentally created a SPA.
  * It's probably fine, but you're in charge of updating the browser history and making sure back/forward nav works.
- * Also your client code is coupled to your filtering/URL business logic and you're likely duplicating this on
- * the server. Ideally the server remains the source of truth of what a valid URL is and the client can just render
+ * Also your filtering/URL is coupled to your fields and you're likely recreating logic for how a filter URL is generated, on server and client now.
+ * Ideally the server remains the source of truth of what a valid URL is and the client can just render
  * whatever the server provides.
  */
 app.get("/search-update-url-client-side", (c) => {
-  const { size, query, queryPattern } = parseFilterInput({
+  const { size, query } = parseFilterInput({
     size: c.req.query("size"),
     query: c.req.query("query"),
   });
 
-  let filteredProducts = filter.all(queryPattern, queryPattern, size);
+  let filteredProducts = getAllFilteredProducts(query, size);
+
+  const updateQueryParams = `window.history.replaceState({}, '', new URL(window.location.pathname+'?size='+$size+'&query='+$query, window.location.href).toString())`;
+  const getFilteredProducts = `@get('/search-update-url-client-side?size='+$size+'&query='+$query)`;
 
   let formEl = (
     <form
       data-signals:size={`'${size}'`}
       data-signals:query={`'${query ?? ""}'`}
       data-on:input={`evt.target.form.requestSubmit()`}
-      data-on:submit={`evt.preventDefault && @get('/search-update-url-client-side?size='+$size+'&query='+$query) && window.history.replaceState({}, '', new URL(window.location.pathname+'?size='+$size+'&query='+$query, window.location.href).toString())`}
+      data-on:submit={`evt.preventDefault && ${getFilteredProducts} && ${updateQueryParams}`}
     >
       <FilterFields size={size} query={query ?? ""} />
     </form>
