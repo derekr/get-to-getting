@@ -11,7 +11,7 @@
  */
 import { Hono } from "hono";
 import type { PropsWithChildren } from "hono/jsx";
-
+import { ServerSentEventGenerator as SSE } from "@starfederation/datastar-sdk/web";
 import { Database } from "bun:sqlite";
 
 /**
@@ -111,8 +111,21 @@ for (let i = 0; i < 100; i++) {
   insert.run(title, size);
 }
 
-const app = new Hono();
+/**
+ * Helpers
+ */
+function buildFilterUrl(
+  baseUrl: string,
+  query: string | null,
+  size: Size,
+): string {
+  const formattedQuery = query ? `&query=${encodeURIComponent(query)}` : "";
+  return `${baseUrl}?size=${size}${formattedQuery}`;
+}
 
+/**
+ * Components/partials
+ */
 function Root(props: PropsWithChildren) {
   return (
     <html lang="en">
@@ -180,6 +193,11 @@ function Products(props: { products: Product[] }) {
     </div>
   );
 }
+
+/**
+ * Web server setup
+ */
+const app = new Hono();
 
 /**
  * Index of all the example routes.
@@ -260,10 +278,12 @@ app.get("/search-update-url-client-side", (c) => {
 
   let filteredProducts = getAllFilteredProducts(query, size);
 
+  // ℹ️ We can't let the server drive the URL in this example. If you were to build the URL now and interpolate it in these expressions
+  // they'd be operating on the original request state and not based on user interactions. You're forced to duplicate URL building to some degree.
   const updateQueryParams = `window.history.replaceState({}, '', new URL(window.location.pathname+'?size='+$size+'&query='+$query, window.location.href).toString())`;
   const getFilteredProducts = `@get('/search-update-url-client-side?size='+$size+'&query='+$query)`;
 
-  let formEl = (
+  let header = (
     <form
       data-signals:size={`'${size}'`}
       data-signals:query={`'${query ?? ""}'`}
@@ -276,18 +296,23 @@ app.get("/search-update-url-client-side", (c) => {
   const isFragment = c.req.header("datastar-request") === "true";
 
   if (isFragment) {
-    c.header("datastar-merge-mode", "morph_element");
-    return c.html(
-      <body>
-        {formEl}
-        <Products products={filteredProducts} />
-      </body>,
-    );
+    return SSE.stream((stream) => {
+      stream.patchElements(
+        (
+          <body>
+            {header}
+            <Products products={filteredProducts} />
+          </body>
+        ).toString(),
+      );
+
+      return;
+    });
   }
 
   return c.html(
     <Root>
-      {formEl}
+      {header}
       <Products products={filteredProducts} />
     </Root>,
   );
@@ -305,12 +330,73 @@ app.get("/search-update-url-client-side", (c) => {
  *
  * The server can also render things like links w/ query params so a user can right click that
  * to copy and share or bookmark. Maintaining the server as the source of truth for valid URLs.
+ *
+ * ℹ️ You could render the link in the previous example, but that illustrates the point about
+ * duplicating URL logic. In this example the updated URL is centralized/owned by the server so it
+ * will remain consistent whether rendering a link or a script that updates the URL when patched in.
  */
 app.get("/search-server-patch", (c) => {
-  return c.text("Search server patch no update url update!");
+  const { size, query } = parseFilterInput({
+    size: c.req.query("size"),
+    query: c.req.query("query"),
+  });
+
+  let filteredProducts = getAllFilteredProducts(query, size);
+
+  const filterUrl = buildFilterUrl(c.req.path, query, size);
+
+  const getFilteredProducts = `@get('${c.req.path}?size='+$size+'&query='+$query)`;
+
+  let header = (
+    <>
+      <form
+        data-signals:size={`'${size}'`}
+        data-signals:query={`'${query ?? ""}'`}
+        data-on:input={`evt.target.form.requestSubmit()`}
+        data-on:submit={`evt.preventDefault && ${getFilteredProducts}`}
+      >
+        <FilterFields size={size} query={query ?? ""} />
+      </form>
+      <a href={filterUrl} style={{ display: "block", paddingBottom: "20px" }}>
+        Bookmark or share
+      </a>
+    </>
+  );
+  const isFragment = c.req.header("datastar-request") === "true";
+
+  if (isFragment) {
+    return SSE.stream((stream) => {
+      stream.patchElements(
+        (
+          <body>
+            {header}
+            <Products products={filteredProducts} />
+          </body>
+        ).toString(),
+      );
+
+      // ℹ️ Here we are controlling the url that gets updated in the browser from the server. It's subtle especially when
+      // it doesn't look or feel that different from updating on the client, but decoupling from the signals in the client
+      // means we have a single source of truth for what the filter url is and how it is built.
+      stream.executeScript(
+        `window.history.replaceState({}, '', new URL(${filterUrl}, window.location.href).toString())`,
+      );
+
+      return;
+    });
+  }
+
+  return c.html(
+    <Root>
+      {header}
+      <Products products={filteredProducts} />
+    </Root>,
+  );
 });
 
 /**
+ * TODO: Will get around to these later.
+ *
  * You're really in to the idea of server authority and don't want to futz with updating
  * the the URL or thinking about browser history?
  * You're fine with moving more state to the backend?
@@ -332,5 +418,7 @@ app.get("/search/sessions", (c) => {
 app.get("/search/sessions/:sessionId", (c) => {
   return c.text("Search sessions detail");
 });
+
+// TODO: expand on sessions w/ per session/page projection/db of data for filter
 
 export default app;
