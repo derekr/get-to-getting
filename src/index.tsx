@@ -220,8 +220,8 @@ app.get("/", (c) => {
 });
 
 /**
- * How to implement filtering using Multi Page Application routing. This route uses
- * view transitions to mask the full page refresh.
+ * How to implement filtering using Multi Page Application routing. This example still
+ * leverages Datastar simply to wire up an event to submit the form on select change.
  *
  * 1. Initially server renders from with filters populating any fields based on present query params.
  * 2. User interacts with form.
