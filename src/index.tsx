@@ -106,7 +106,7 @@ for (let i = 0; i < 100; i++) {
 
 const app = new Hono();
 
-function Root(props: PropsWithChildren<{ includeDatastar?: boolean }>) {
+function Root(props: PropsWithChildren) {
   return (
     <html lang="en">
       <head>
@@ -114,12 +114,10 @@ function Root(props: PropsWithChildren<{ includeDatastar?: boolean }>) {
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
         <title>Query Params Example</title>
-        {props.includeDatastar ? (
-          <script
-            type="module"
-            src="https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.0-RC.6/bundles/datastar.js"
-          />
-        ) : null}
+        <script
+          type="module"
+          src="https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.0-RC.6/bundles/datastar.js"
+        />
       </head>
       <body>{props.children}</body>
     </html>
@@ -131,7 +129,7 @@ function FilterForm(props: {
   query: string;
   useDatastar?: boolean;
 }) {
-  const datastarAttrs = props.useDatastar
+  const formAttrs = props.useDatastar
     ? {
         "data-signals:size": `'${props.size}'`,
         "data-signals:query": `'${props.query}'`,
@@ -141,10 +139,16 @@ function FilterForm(props: {
     : {};
 
   return (
-    <form {...datastarAttrs}>
+    <form {...formAttrs}>
       <label>
         Size:
-        <select name="size" data-bind={props.useDatastar ? "size" : undefined}>
+        <select
+          name="size"
+          data-bind={props.useDatastar ? "size" : undefined}
+          data-on:input={
+            !props.useDatastar ? "evt.target.form.requestSubmit()" : undefined
+          }
+        >
           <option value="">All</option>
           <option value="small" selected={props.size === "small"}>
             Small
@@ -282,7 +286,7 @@ app.get("/search-update-url-client-side", (c) => {
 
   // Full page render
   return c.html(
-    <Root includeDatastar={true}>
+    <Root>
       <FilterForm
         size={size}
         query={c.req.query("query") ?? ""}
