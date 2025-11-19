@@ -379,7 +379,7 @@ app.get("/search-server-patch", (c) => {
       // it doesn't look or feel that different from updating on the client, but decoupling from the signals in the client
       // means we have a single source of truth for what the filter url is and how it is built.
       stream.executeScript(
-        `window.history.replaceState({}, '', new URL(${filterUrl}, window.location.href).toString())`,
+        `window.history.replaceState({}, '', new URL('${filterUrl}', window.location.href).toString())`,
       );
 
       return;
